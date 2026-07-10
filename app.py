@@ -1,71 +1,80 @@
 import streamlit as st
-from duckduckgo_search import DDGS
+import requests
+import urllib.parse
 import pandas as pd
 import re
+from duckduckgo_search import DDGS
+import time
 
-st.set_page_config(page_title="Trợ Lý Săn Deal Vạn Năng", page_icon="🛍️", layout="wide")
+st.set_page_config(page_title="Trợ Lý Săn Deal Đa Nền Tảng", page_icon="🛍️", layout="wide")
+st.title("🛍️ Hệ Thống Quét Deal Lai (Hybrid)")
+st.write("Tự động kết hợp dữ liệu API trực tiếp và Vệ tinh tìm kiếm.")
 
-st.title("🛍️ Hệ Thống Quét Deal Đa Nền Tảng (Không Cần Cấu Hình)")
-st.write("Sử dụng vệ tinh tìm kiếm toàn cầu để bóc tách giá từ mọi website (Shopee, Lazada, Tiki, v.v.)")
+ten_sp = st.text_input("Nhập tên sản phẩm (Ví dụ: iPhone 16):")
 
-# Ô nhập liệu
-ten_sp = st.text_input("Nhập tên sản phẩm (Ví dụ: Galaxy S25 Ultra, iPhone 16):")
-
-# Hàm tự động nhận diện và bóc tách giá tiền từ văn bản lộn xộn
-def tim_gia_trong_van_ban(text):
-    # Tìm các mẫu chữ số giống tiền tệ Việt Nam (VD: 25.000.000 đ, 25,000,000₫)
+def tim_gia(text):
     mau_gia = r'(\d{1,3}(?:[.,]\d{3})+(?:\s?[đ₫]|(?:\s?VND|VNĐ)))'
-    ket_qua = re.findall(mau_gia, text, re.IGNORECASE)
-    if ket_qua:
-        return ket_qua[0] # Lấy mức giá đầu tiên tìm thấy
-    return "Bấm link để xem giá"
+    kq = re.findall(mau_gia, text, re.IGNORECASE)
+    return kq[0] if kq else "Bấm link để xem giá"
 
 if st.button("🚀 Quét Toàn Bộ Internet"):
     if not ten_sp.strip():
         st.error("⚠️ Vui lòng gõ tên sản phẩm!")
     else:
-        with st.spinner(f"🔄 Đang thả bot lùng sục '{ten_sp}' trên toàn mạng lưới..."):
-            ket_qua_tong_hop = []
+        ket_qua_tong_hop = []
+        
+        with st.spinner(f"🔄 Đang kết nối API chuyên dụng và lùng sục mạng lưới cho '{ten_sp}'..."):
             
+            # --- LUỒNG 1: Lấy dữ liệu chắc chắn từ TIKI API ---
             try:
-                # Gọi vệ tinh DuckDuckGo (Không cần API key, không bị chặn)
-                ddgs = DDGS()
-                
-                # Cú pháp tìm kiếm ép kết quả trả về từ các trang TMĐT lớn tại VN
-                truy_van = f"{ten_sp} site:shopee.vn OR site:lazada.vn OR site:tiki.vn OR site:hoanghamobile.com OR site:cellphones.com.vn"
-                
-                # Lấy 20 kết quả hàng đầu
-                ket_qua_tim_kiem = ddgs.text(truy_van, region='vn-vi', max_results=20)
-                
-                for item in ket_qua_tim_kiem:
-                    # Tự động trích xuất tên miền để xem deal từ nguồn nào
-                    nguon = item['href'].split('/')[2].replace("www.", "")
-                    
-                    # Trích xuất giá từ mô tả của kết quả tìm kiếm
-                    gia_tim_thay = tim_gia_trong_van_ban(item['body'] + " " + item['title'])
-                    
-                    ket_qua_tong_hop.append({
-                        "Nguồn website": nguon,
-                        "Tiêu đề/Sản phẩm": item['title'][:70] + "...", # Cắt ngắn cho gọn
-                        "Giá trích xuất": gia_tim_thay,
-                        "Đường link sản phẩm": item['href']
-                    })
-                    
-            except Exception as e:
-                st.error(f"Máy chủ tìm kiếm đang bận, vui lòng thử lại sau. Lỗi: {e}")
+                headers = {"User-Agent": "Mozilla/5.0"}
+                url_tiki = f"https://tiki.vn/api/v2/products?limit=5&q={urllib.parse.quote(ten_sp)}"
+                res = requests.get(url_tiki, headers=headers, timeout=5)
+                if res.status_code == 200:
+                    for item in res.json().get('data', []):
+                        if 'price' in item:
+                            ket_qua_tong_hop.append({
+                                "Nguồn": "Tiki 🔵",
+                                "Sản phẩm": item.get('name')[:60] + "...",
+                                "Mức giá": f"{item.get('price'):,} ₫",
+                                "Đường link": f"https://tiki.vn/{item.get('url_path')}"
+                            })
+            except Exception:
+                pass # Bỏ qua lỗi nếu Tiki lag
 
-            # Hiển thị kết quả
-            if ket_qua_tong_hop:
-                df = pd.DataFrame(ket_qua_tong_hop)
-                st.success(f"🎉 Đã quét xong! Phân tích tự động được {len(df)} nguồn bán tiềm năng.")
+            # --- LUỒNG 2: Dùng DuckDuckGo quét thêm các web ngoài ---
+            try:
+                ddgs = DDGS()
+                # Tách nhỏ truy vấn để không bị hệ thống chặn
+                cac_nguon_ngoai = ["hoanghamobile", "cellphones"] 
                 
-                st.dataframe(
-                    df,
-                    column_config={
-                        "Đường link sản phẩm": st.column_config.LinkColumn("Bấm để xem/mua ngay")
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.warning("😭 Không quét được deal nào. Hãy thử lại với từ khóa khác.")
+                for nguon in cac_nguon_ngoai:
+                    truy_van = f"{ten_sp} {nguon}"
+                    kq_tim_kiem = ddgs.text(truy_van, region='vn-vi', max_results=3)
+                    
+                    if kq_tim_kiem:
+                        for item in kq_tim_kiem:
+                            # Chỉ lấy kết quả thực sự thuộc về nguồn đang tìm
+                            if nguon in item['href'].lower():
+                                ket_qua_tong_hop.append({
+                                    "Nguồn": nguon.capitalize() + " 🌐",
+                                    "Sản phẩm": item['title'][:60] + "...",
+                                    "Mức giá": tim_gia(item['body'] + " " + item['title']),
+                                    "Đường link": item['href']
+                                })
+                    time.sleep(0.5) # Chờ nửa giây để tránh bị spam IP
+            except Exception as e:
+                st.toast(f"Luồng tìm kiếm ngoài bị nghẽn nhẹ: {e}", icon="⚠️")
+
+        # --- TỔNG HỢP VÀ HIỂN THỊ ---
+        if ket_qua_tong_hop:
+            df = pd.DataFrame(ket_qua_tong_hop)
+            st.success(f"🎉 Đã tìm thấy {len(df)} kết quả hợp lệ!")
+            st.dataframe(
+                df,
+                column_config={"Đường link": st.column_config.LinkColumn("Xem Deal Ngay")},
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.error("😭 Máy chủ đang bị chặn toàn diện hoặc không có mặt hàng này. Vui lòng thử lại sau 5 phút.")
