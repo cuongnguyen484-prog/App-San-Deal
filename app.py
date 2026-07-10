@@ -42,29 +42,28 @@ if st.button("🚀 Quét Toàn Bộ Internet"):
             except Exception:
                 pass # Bỏ qua lỗi nếu Tiki lag
 
-            # --- LUỒNG 2: Dùng DuckDuckGo quét thêm các web ngoài ---
+            # ---             # --- LUỒNG 2: Quét các trang bán lẻ (Không bị chặn như Shopee/Lazada) ---
+            # Chúng ta sẽ tìm kiếm trực tiếp trên google (thông qua DDGS) 
+            # nhưng giới hạn kết quả vào các trang bán lẻ uy tín
             try:
                 ddgs = DDGS()
-                # Tách nhỏ truy vấn để không bị hệ thống chặn
-                cac_nguon_ngoai = ["hoanghamobile", "cellphones"] 
+                # Danh sách các trang web bán lẻ thân thiện với bot
+                danh_sach_web = ["cellphones.com.vn", "hoanghamobile.com"]
                 
-                for nguon in cac_nguon_ngoai:
-                    truy_van = f"{ten_sp} {nguon}"
-                    kq_tim_kiem = ddgs.text(truy_van, region='vn-vi', max_results=3)
+                for site in danh_sach_web:
+                    # Tìm kiếm sản phẩm trong chính website đó
+                    truy_van = f"site:{site} {ten_sp}"
+                    ket_qua_ddgs = ddgs.text(truy_van, region='vn-vi', max_results=2)
                     
-                    if kq_tim_kiem:
-                        for item in kq_tim_kiem:
-                            # Chỉ lấy kết quả thực sự thuộc về nguồn đang tìm
-                            if nguon in item['href'].lower():
-                                ket_qua_tong_hop.append({
-                                    "Nguồn": nguon.capitalize() + " 🌐",
-                                    "Sản phẩm": item['title'][:60] + "...",
-                                    "Mức giá": tim_gia(item['body'] + " " + item['title']),
-                                    "Đường link": item['href']
-                                })
-                    time.sleep(0.5) # Chờ nửa giây để tránh bị spam IP
-            except Exception as e:
-                st.toast(f"Luồng tìm kiếm ngoài bị nghẽn nhẹ: {e}", icon="⚠️")
+                    for item in ket_qua_ddgs:
+                        ket_qua_tong_hop.append({
+                            "Nguồn": site.split('.')[0].capitalize() + " 🌐",
+                            "Sản phẩm": item['title'][:50] + "...",
+                            "Mức giá": "Bấm để xem",
+                            "Đường link": item['href']
+                        })
+            except Exception:
+                pass
 
         # --- TỔNG HỢP VÀ HIỂN THỊ ---
         if ket_qua_tong_hop:
