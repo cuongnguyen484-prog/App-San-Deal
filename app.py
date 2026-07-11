@@ -52,17 +52,49 @@ if TAVILY_KEY:
 
 
 # ══ Tiện ích ══
+XAU_TRUOC = ["giảm", "góp", "tặng", "voucher", "hoàn", "ưu đãi", "tiết kiệm",
+             "trợ giá", "thu cũ", "cọc", "trả trước", "khuyến mãi", "quà"]
+XAU_SAU = ["/tháng", "/ tháng", "đ/th", "₫/th", "mỗi tháng", "một tháng", "/ngày", "/ ngày"]
+TOT_TRUOC = ["giá", "chỉ", "còn", "bán", "price"]
+
+
 def tim_gia(text):
-    """Tìm chuỗi giá kiểu Việt Nam (vd 19.990.000đ) trong văn bản."""
-    mau = r"(\d{1,3}(?:[.,]\d{3})+\s?(?:[đ₫]|VN[DĐ]))"
-    kq = re.findall(mau, text or "", re.IGNORECASE)
-    return kq[0] if kq else "Bấm link để xem giá"
+    """Bắt giá theo NGỮ CẢNH: bỏ số khuyến mãi/trả góp, ưu tiên số sau chữ 'giá'.
+    Khi các con số mâu thuẫn lớn → trả 'Bấm link' thay vì đoán sai."""
+    text = text or ""
+    ung_vien = []
+    for m in re.finditer(r"\d{1,3}(?:[.,]\d{3})+\s?(?:[đ₫]|VN[DĐ])", text, re.IGNORECASE):
+        truoc = text[max(0, m.start() - 22):m.start()].lower()
+        sau = text[m.end():m.end() + 12].lower()
+        if any(x in truoc for x in XAU_TRUOC) or any(x in sau for x in XAU_SAU):
+            continue  # số khuyến mãi / trả góp — không phải giá sản phẩm
+        so = int(re.sub(r"[^\d]", "", m.group(0)))
+        diem = 1 if any(x in truoc for x in TOT_TRUOC) else 0
+        ung_vien.append((so, diem))
+    if not ung_vien:
+        return "Bấm link để xem giá"
+    co_diem = [u[0] for u in ung_vien if u[1] > 0]
+    if co_diem:
+        # Ưu tiên số có chữ "giá/còn..." đứng trước, nhưng giữ thêm số khác
+        # trong tầm hợp lý (1/3 → 3 lần) vì có thể là phiên bản/giá gốc
+        lo, hi = min(co_diem), max(co_diem)
+        cac_so = sorted({u[0] for u in ung_vien if u[1] > 0 or (lo / 3 <= u[0] <= hi * 3)})
+    else:
+        cac_so = sorted({u[0] for u in ung_vien})
+    nho, lon = cac_so[0], cac_so[-1]
+    fmt = lambda n: f"{n:,.0f}".replace(",", ".") + "đ"
+    if lon <= nho * 1.6:
+        # nhiều mức giá gần nhau (sale/giá gốc hoặc các phiên bản) → "từ" giá thấp nhất
+        return ("≈ từ " if len(cac_so) > 1 else "≈ ") + fmt(nho)
+    if lon <= nho * 3:
+        return f"≈ {fmt(nho)} – {fmt(lon)}"  # nhiều phiên bản → hiện khoảng giá
+    return "Bấm link để xem giá"    # mâu thuẫn quá lớn → không đoán
 
 
 def gia_so(chuoi):
-    """Đổi chuỗi giá thành số để sắp xếp; None nếu không có số."""
-    so = re.sub(r"[^\d]", "", str(chuoi))
-    return int(so) if so else None
+    """Lấy cụm số đầu tiên trong chuỗi giá để sắp xếp; None nếu không có."""
+    m = re.search(r"\d{1,3}(?:[.,]\d{3})+|\d+", str(chuoi))
+    return int(re.sub(r"[^\d]", "", m.group(0))) if m else None
 
 
 def _sach(t):
@@ -239,12 +271,13 @@ if st.button("🚀 Quét giá ngay", type="primary"):
                         st.markdown("## 🛒")
                 with c2:
                     st.markdown(f"**{_sach(r['Sản phẩm'])}**")
-                    dong = f"{_sach(r['Nguồn'])} · :red[**{_sach(r['Mức giá'])}**]"
+                    mau = "red" if "Tiki" in r["Nguồn"] else "orange"
+                    dong = f"{_sach(r['Nguồn'])} · :{mau}[**{_sach(r['Mức giá'])}**]"
                     link = r.get("Đường link") or ""
                     if link.startswith("http"):
                         dong += f" · [Xem ngay](<{link}>)"
                     st.markdown(dong)
                 st.divider()
-            st.caption("💡 Giá Tiki là giá thật thời điểm quét. Giá nguồn khác lấy từ mô tả kết quả tìm kiếm nên có thể cũ — bấm link xem giá chính xác. Ảnh chỉ có ở Tiki (API cung cấp); các nguồn khác không kèm ảnh sản phẩm.")
+            st.caption("💡 Giá đỏ (Tiki) là giá thật thời điểm quét. Giá cam có dấu ≈ là giá THAM KHẢO trích từ mô tả tìm kiếm — có thể sai hoặc cũ, LUÔN bấm link để xem giá chính xác. Ảnh chỉ có ở Tiki.")
         elif not cac_loi:
             st.info("Không có kết quả khớp. Thử: bỏ bớt chữ trong từ khóa (giữ hãng + model, vd 'Dodoto V8'), hoặc bỏ tick 'Lọc chặt' để xem tất cả.")
