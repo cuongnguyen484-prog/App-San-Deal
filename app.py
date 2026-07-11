@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import urllib.parse
-import pandas as pd
 import re
 
 st.set_page_config(page_title="Săn Deal Đa Nền Tảng", page_icon="🛍️", layout="wide")
@@ -164,16 +163,22 @@ if st.button("🚀 Quét giá ngay", type="primary"):
 
         # ── Hiển thị kết quả ──
         if tong_hop:
-            df = pd.DataFrame(tong_hop)
-            df["_sapxep"] = df["Mức giá"].apply(gia_so)
-            df = df.sort_values("_sapxep", na_position="last").drop(columns="_sapxep")
-            st.success(f"🎉 Tìm thấy {len(df)} kết quả — xếp giá thấp → cao (chưa rõ giá nằm cuối).")
-            st.dataframe(
-                df,
-                column_config={"Đường link": st.column_config.LinkColumn("Xem ngay")},
-                hide_index=True,
-                use_container_width=True,
-            )
+            def _khoa(r):
+                g = gia_so(r["Mức giá"])
+                return (g is None, g or 0)
+
+            sap_xep = sorted(tong_hop, key=_khoa)
+            st.success(f"🎉 Tìm thấy {len(sap_xep)} kết quả — xếp giá thấp → cao (chưa rõ giá nằm cuối).")
+
+            def _sach(t):
+                return str(t).replace("|", "-").replace("\n", " ").strip()
+
+            dong = ["| Nguồn | Sản phẩm | Mức giá | Link |", "|---|---|---|---|"]
+            for r in sap_xep:
+                link = r.get("Đường link") or ""
+                lk = f"[Xem ngay](<{link}>)" if link.startswith("http") else ""
+                dong.append(f"| {_sach(r['Nguồn'])} | {_sach(r['Sản phẩm'])} | **{_sach(r['Mức giá'])}** | {lk} |")
+            st.markdown("\n".join(dong))
             st.caption("💡 Giá Tiki là giá thật thời điểm quét. Giá nguồn khác lấy từ mô tả kết quả tìm kiếm nên có thể cũ vài ngày — bấm link để xem giá chính xác.")
         elif not cac_loi:
             st.info("Không tìm thấy kết quả nào cho từ khoá này. Thử từ khoá ngắn gọn hơn (vd: bỏ màu sắc, dung lượng).")
